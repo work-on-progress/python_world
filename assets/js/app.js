@@ -150,7 +150,7 @@ function currentTheme() {
   catch { return DEFAULT_THEME; }
 }
 
-function applyTheme(id, animate) {
+function applyTheme(id, animate, persist) {
   const theme = THEMES.some(t => t.id === id) ? id : DEFAULT_THEME;
   const root = document.documentElement;
   if (animate) {
@@ -158,7 +158,10 @@ function applyTheme(id, animate) {
     setTimeout(() => root.classList.remove("theme-anim"), 320);
   }
   root.setAttribute("data-theme", theme);
-  try { localStorage.setItem(THEME_KEY, theme); } catch {}
+  /* Only a deliberate pick is written to the device. Painting the default on
+     load must NOT count as a choice, or the account's saved theme could never
+     take effect on a fresh browser. */
+  if (persist) { try { localStorage.setItem(THEME_KEY, theme); } catch {} }
 
   const dots = $("#themeDots");
   if (dots) {
@@ -210,7 +213,7 @@ function openThemePicker() {
 
   $$("[data-theme-id]", modal).forEach(btn => btn.addEventListener("click", () => {
     const id = btn.dataset.themeId;
-    applyTheme(id, true);
+    applyTheme(id, true, true);
     $$(".themecard", modal).forEach(c => c.classList.toggle("is-active", c === btn));
     /* Remember it on the server too, but never block on it. */
     if (student && student.token) API.saveTheme(student, id).catch(() => {});
@@ -2530,6 +2533,7 @@ $("#askForm").addEventListener("submit", async (e) => {
    BOOT
    ====================================================================== */
 (async function boot() {
+  bindThemeButtons();          // bound before any network call can hang
   setAuthMode("login");
   await loadSections();
   student = loadStudent();
@@ -2543,6 +2547,7 @@ $("#askForm").addEventListener("submit", async (e) => {
       student.role = res.account.role;
       student.status = res.account.status;
       student.expiresAt = res.expiresAt;
+      adoptServerTheme(res.theme);
       saveStudent();
       applyRemoteState(res.state);
       startApp();
@@ -2550,6 +2555,7 @@ $("#askForm").addEventListener("submit", async (e) => {
     }
     clearStudent();
   }
+  bindThemeButtons();          // the gate has a Theme button too
   $("#gate").hidden = false;
   typeShell();
   $("#regId").focus();
