@@ -13,17 +13,28 @@
    ========================================================================== */
 
 const COURSE_META = Object.freeze({
-  version: "3.0.0",
-  buildDate: "2026-07-31",
+  version: "4.0.0",
+  buildDate: "2026-08-05",
   slots: 6
 });
 
 const COURSE = (() => {
   const found = [];
 
+  /* A top-level `const` in a plain <script> does NOT become a property of
+     window, so window["UNIT_3"] is always undefined. The units must be read
+     by name instead. `typeof` is safe even when a unit file failed to load. */
+  const slots = [
+    typeof UNIT_1 !== "undefined" ? UNIT_1 : null,
+    typeof UNIT_2 !== "undefined" ? UNIT_2 : null,
+    typeof UNIT_3 !== "undefined" ? UNIT_3 : null,
+    typeof UNIT_4 !== "undefined" ? UNIT_4 : null,
+    typeof UNIT_5 !== "undefined" ? UNIT_5 : null,
+    typeof UNIT_6 !== "undefined" ? UNIT_6 : null
+  ];
+
   for (let n = 1; n <= COURSE_META.slots; n++) {
-    const unit = (typeof window !== "undefined" ? window["UNIT_" + n] : null) ||
-                 (typeof globalThis !== "undefined" ? globalThis["UNIT_" + n] : null);
+    const unit = slots[n - 1];
 
     if (!unit) continue;                                   // file not loaded yet
     if (!Array.isArray(unit.topics) || !unit.topics.length) continue;  // still empty
