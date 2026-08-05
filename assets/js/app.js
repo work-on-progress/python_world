@@ -119,7 +119,114 @@ function rec(id) {
   return progress[id];
 }
 
+
+/* ======================================================================
+   THEMES
+
+   One attribute on <html> repaints everything — sign-in, student screens,
+   faculty console. The choice is kept in localStorage so the page never
+   flashes the wrong colours on load, and mirrored to the Sheet so it follows
+   the person to another device.
+   ====================================================================== */
+
+const THEMES = [
+  { id: "classic-white", name: "Classic White", note: "Bright, clean and professional.",
+    swatch: ["#FFFFFF", "#EDF0F6", "#1D4ED8", "#C9D2E4"] },
+  { id: "dark-galaxy",   name: "Dark Galaxy",   note: "Focused dark mode with indigo highlights.",
+    swatch: ["#0F1730", "#1C2A52", "#8B7DF0", "#EFEDE4"] },
+  { id: "ocean-blue",    name: "Ocean Blue",    note: "Calming deep-ocean blue and cyan tones.",
+    swatch: ["#07202E", "#134259", "#22D3EE", "#E6F4F9"] },
+  { id: "forest-green",  name: "Forest Green",  note: "Natural green tones for long study sessions.",
+    swatch: ["#0C1F16", "#193F2E", "#4ADE80", "#E8F3EC"] },
+  { id: "sunset-warm",   name: "Sunset Warm",   note: "Warm amber and rose highlights.",
+    swatch: ["#231311", "#452722", "#FBAF3F", "#F8EDE6"] }
+];
+
+const THEME_KEY = "abhyaslab.theme";
+const DEFAULT_THEME = "dark-galaxy";
+
+function currentTheme() {
+  try { return localStorage.getItem(THEME_KEY) || DEFAULT_THEME; }
+  catch { return DEFAULT_THEME; }
+}
+
+function applyTheme(id, animate) {
+  const theme = THEMES.some(t => t.id === id) ? id : DEFAULT_THEME;
+  const root = document.documentElement;
+  if (animate) {
+    root.classList.add("theme-anim");
+    setTimeout(() => root.classList.remove("theme-anim"), 320);
+  }
+  root.setAttribute("data-theme", theme);
+  try { localStorage.setItem(THEME_KEY, theme); } catch {}
+
+  const dots = $("#themeDots");
+  if (dots) {
+    const t = THEMES.find(x => x.id === theme);
+    dots.innerHTML = t.swatch.map(c => `<i style="background:${c}"></i>`).join("");
+  }
+  return theme;
+}
+
+/* Runs before anything renders, so there is never a flash of the wrong theme. */
+applyTheme(currentTheme(), false);
+
+function openThemePicker() {
+  const active = currentTheme();
+  const modal = document.createElement("div");
+  modal.className = "modal";
+  modal.id = "themeModal";
+  modal.innerHTML = `
+    <div class="modal__box" role="dialog" aria-modal="true" aria-labelledby="themeTitle">
+      <header class="modal__head">
+        <div>
+          <p class="modal__k">Appearance</p>
+          <h3 class="modal__t" id="themeTitle">Choose theme</h3>
+          <p class="modal__s">The same theme is used on the sign-in, student and faculty pages.</p>
+        </div>
+        <button class="modal__x" id="themeClose" aria-label="Close">&times;</button>
+      </header>
+      <div class="themelist">
+        ${THEMES.map(t => `
+          <button type="button" class="themecard ${t.id === active ? "is-active" : ""}" data-theme-id="${t.id}">
+            <span class="themecard__swatch">${t.swatch.map(c => `<i style="background:${c}"></i>`).join("")}</span>
+            <span class="themecard__main">
+              <span class="themecard__t">${esc(t.name)}</span>
+              <span class="themecard__s">${esc(t.note)}</span>
+            </span>
+            <span class="themecard__tick">&#10003;</span>
+          </button>`).join("")}
+      </div>
+    </div>`;
+
+  document.body.appendChild(modal);
+
+  const close = () => modal.remove();
+  $("#themeClose", modal).addEventListener("click", close);
+  modal.addEventListener("click", e => { if (e.target === modal) close(); });
+  document.addEventListener("keydown", function onKey(e) {
+    if (e.key === "Escape") { close(); document.removeEventListener("keydown", onKey); }
+  });
+
+  $$("[data-theme-id]", modal).forEach(btn => btn.addEventListener("click", () => {
+    const id = btn.dataset.themeId;
+    applyTheme(id, true);
+    $$(".themecard", modal).forEach(c => c.classList.toggle("is-active", c === btn));
+    /* Remember it on the server too, but never block on it. */
+    if (student && student.token) API.saveTheme(student, id).catch(() => {});
+    setTimeout(close, 220);
+  }));
+}
+
 const isFaculty = () => !!student && student.role === "faculty";
+
+/* If this device has never picked a theme, use the one saved on the account. */
+function adoptServerTheme(theme) {
+  if (!theme) return;
+  let chosen = null;
+  try { chosen = localStorage.getItem(THEME_KEY); } catch {}
+  if (!chosen) applyTheme(theme, false);
+}
 
 const SYNC = (() => {
   const skip = () => Promise.resolve({ ok: false, faculty: true });
@@ -391,19 +498,35 @@ function setAuthMode(mode) {
   $("#regEmail").required = registering;
   $("#regSection").required = registering;
   $("#regPin2").required = registering;
-  $("#authSubmit").textContent = registering ? "Create student account" : "Sign in";
-  if (registering) {
-    $("#regRole").value = "student";
-    $("#regRole").disabled = true;
-    $("#regPin").autocomplete = "new-password";
-  } else {
-    $("#regRole").disabled = false;
-    $("#regPin").autocomplete = "current-password";
-  }
-  $("#regNote").textContent = registering
-    ? "First-time students must enter their name, email, section and a new four-digit PIN."
-    : "Your sign-in remains active for 24 hours.";
+  $("#regPin").autocomplete = registering ? "new-password" : "current-password";
+  $("#regRole").disabled = false;
+  applyRoleFields();
   $("#regNote").classList.remove("is-bad");
+}
+
+/* Students and faculty need different fields when signing up. */
+function applyRoleFields() {
+  const registering = authMode === "register";
+  const faculty = $("#regRole").value === "faculty";
+
+  const sectionField = $("#regSection").closest(".field");
+  const facultyField = $("#facultyFields");
+
+  if (sectionField) sectionField.hidden = !registering || faculty;
+  if (facultyField) facultyField.hidden = !registering || !faculty;
+  $("#regSection").required = registering && !faculty;
+
+  $("#authSubmit").textContent = !registering
+    ? "Sign in"
+    : (faculty ? "Create faculty account" : "Create student account");
+
+  $("#regId").placeholder = faculty ? "F1024" : "S2026CS01";
+
+  $("#regNote").textContent = !registering
+    ? "Your sign-in stays active for 12 hours."
+    : (faculty
+        ? "Faculty IDs start with F. List the sections you teach, separated by commas."
+        : "Student roll numbers start with S. Pick your section and choose a new four-digit PIN.");
 }
 
 $$('[data-auth-mode]').forEach(btn => btn.addEventListener("click", () => setAuthMode(btn.dataset.authMode)));
@@ -417,17 +540,15 @@ async function loadSections() {
     select.innerHTML = '<option value="">No sections available</option>';
     return;
   }
-  const sections = res.sections || [];
-  select.innerHTML = '<option value="">Choose your section</option>' + sections.map(s =>
-    `<option value="${esc(s.name)}">${esc(s.name)}</option>`
-  ).join("");
+  /* The backend sends plain strings; older builds sent objects. Accept both. */
+  const sections = (res.sections || []).map(s => (typeof s === "string" ? s : s && s.name)).filter(Boolean);
+  select.innerHTML = sections.length
+    ? '<option value="">Choose your section</option>' +
+      sections.map(name => `<option value="${esc(name)}">${esc(name)}</option>`).join("")
+    : '<option value="">No sections yet — ask your faculty</option>';
 }
 
-$("#regRole").addEventListener("change", () => {
-  if (authMode === "register" && $("#regRole").value !== "student") {
-    $("#regRole").value = "student";
-  }
-});
+$("#regRole").addEventListener("change", applyRoleFields);
 
 $("#regForm").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -458,15 +579,25 @@ $("#regForm").addEventListener("submit", async (e) => {
     const email = $("#regEmail").value.trim();
     const section = $("#regSection").value;
     const confirmPin = $("#regPin2").value.trim();
-    if (name.length < 3 || !email || !section || pin !== confirmPin) {
+    const needsSection = role !== "faculty";
+    if (name.length < 3 || !email || (needsSection && !section) || pin !== confirmPin) {
       btn.disabled = false;
       note.textContent = pin !== confirmPin
         ? "The two PIN entries do not match."
-        : "Complete your name, email and section.";
+        : (needsSection ? "Fill in your name, email and section." : "Fill in your name and email.");
       note.classList.add("is-bad");
       return;
     }
-    res = await API.registerStudent({ id, name, email, section, pin });
+    if (role === "faculty") {
+      const sections = ($("#regSections").value || "")
+        .split(",").map(x => x.trim()).filter(Boolean);
+      res = await API.registerFaculty({
+        id, name, email, pin, sections,
+        joinCode: ($("#regJoinCode").value || "").trim()
+      });
+    } else {
+      res = await API.registerStudent({ id, name, email, section, pin });
+    }
   } else {
     res = await API.login(role, id, pin);
   }
@@ -483,6 +614,7 @@ $("#regForm").addEventListener("submit", async (e) => {
 
 function acceptAuthResponse(res) {
   const a = res.account || {};
+  adoptServerTheme(res.theme);
   student = {
     id: a.id,
     name: a.name,
@@ -500,7 +632,19 @@ function acceptAuthResponse(res) {
   startApp();
 }
 
+function bindThemeButtons() {
+  ["#themeBtn", "#themeBtnGate"].forEach(sel => {
+    const btn = $(sel);
+    if (btn && !btn.dataset.bound) {
+      btn.dataset.bound = "1";
+      btn.addEventListener("click", openThemePicker);
+    }
+  });
+  applyTheme(currentTheme(), false);
+}
+
 function startApp() {
+  bindThemeButtons();
   $("#gate").hidden = true;
   $("#app").hidden  = false;
   $("#whoName").textContent = student.name;
@@ -693,210 +837,563 @@ function render() {
   if (s.kind === "test")    { armGuard(i, exam.running); return paintTest(i); }
   if (s.kind === "project") { armGuard(i, false); return paintProject(i); }
 }
-
 /* ======================================================================
-   FACULTY WEBSITE DASHBOARD
+   FACULTY CONSOLE
+
+   The dashboard loads in stages. Headline numbers arrive first and paint
+   immediately; the student list, the charts and the attention list follow on
+   their own. Nothing waits for anything else, so the screen is useful in
+   about the time one small request takes rather than one huge one.
    ====================================================================== */
-let facultyCache = null;
+
+let facultyState = {
+  tab: "overview",
+  page: 1,
+  pageSize: 25,
+  section: "",
+  status: "",
+  query: "",
+  sort: "name",
+  summary: null
+};
 
 function facultyNavHtml(active) {
-  return `<div class="faculty-nav">
-    ${[
-      ["overview", "Dashboard"], ["students", "Students"],
-      ["projects", "Project reviews"], ["sections", "Sections"]
-    ].map(([tab, label]) => `<button type="button" data-faculty-tab="${tab}" class="${active === tab ? "is-active" : ""}">${label}</button>`).join("")}
-  </div>`;
+  return `<div class="faculty-tabs">${[
+    ["overview", "Dashboard"],
+    ["students", "Students"],
+    ["charts", "Charts"],
+    ["projects", "Project reviews"],
+    ["sections", "Sections"]
+  ].map(([tab, label]) =>
+    `<button type="button" data-faculty-tab="${tab}" class="${active === tab ? "is-active" : ""}">${label}</button>`
+  ).join("")}</div>`;
 }
 
-async function paintFacultyConsole(tab = "overview") {
-  if (!isFaculty()) return go({ name: "dashboard" });
-  $("#main").innerHTML = `<div class="wrap">
-    <header class="thead"><p class="thead__k">Faculty console</p><h2 class="thead__t">Loading your sections…</h2></header>
-    <div class="faculty-card"><span class="spin"></span> Reading the latest Sheet data.</div>
-  </div>`;
-  const res = await API.facultyDashboard(student);
-  if (!res || !res.ok) {
-    $("#main").innerHTML = `<div class="wrap"><div class="result"><div><h4 class="result__t">Faculty dashboard unavailable</h4><p class="result__s">${esc((res && res.error) || "Try again.")}</p></div></div></div>`;
-    if (res && /session/i.test(res.error || "")) logoutNow(res.error);
-    return;
-  }
-  facultyCache = res;
-  renderFacultyTab(tab, res);
-}
-
-function renderFacultyTab(tab, data) {
-  view.facultyTab = tab;
-  let content = "";
-  if (tab === "students") content = facultyStudentsHtml(data);
-  else if (tab === "projects") content = facultyProjectsHtml(data);
-  else if (tab === "sections") content = facultySectionsHtml(data);
-  else content = facultyOverviewHtml(data);
-
+function facultyShell(tab, body) {
+  const s = facultyState.summary;
   $("#main").innerHTML = `<div class="wrap">
     <header class="thead">
       <p class="thead__k">Faculty console</p>
       <h2 class="thead__t">${esc(student.name)}</h2>
-      <p class="thead__s">Showing students from: ${esc((data.sections || []).join(", ") || "No sections assigned yet")}</p>
+      <p class="thead__s">${s
+        ? `${esc((s.sections || []).join(", ") || "No sections yet")}${s.isAdmin ? " · Administrator" : ""}`
+        : "Loading…"}</p>
     </header>
     ${facultyNavHtml(tab)}
-    ${content}
+    <div id="facultyBody">${body}</div>
     ${credit()}
   </div>`;
-  bindFacultyEvents(tab, data);
+  $$('[data-faculty-tab]', $("#main")).forEach(b =>
+    b.addEventListener("click", () => {
+      facultyState.tab = b.dataset.facultyTab;
+      facultyState.page = 1;
+      paintFacultyConsole(facultyState.tab);
+    }));
 }
 
-function facultyOverviewHtml(data) {
-  const s = data.summary || {};
+const skeleton = (n = 3) =>
+  `<div>${Array.from({ length: n }, () => `<div class="skel skel--card"></div>`).join("")}</div>`;
+
+async function paintFacultyConsole(tab = "overview") {
+  if (!isFaculty()) return go({ name: "dashboard" });
+  facultyState.tab = tab;
+
+  facultyShell(tab, skeleton(tab === "overview" ? 4 : 3));
+
+  /* Stage one: the headline numbers. Small, so this lands quickly. */
+  const summary = await API.facultySummary(student);
+  if (!summary || !summary.ok) {
+    $("#facultyBody").innerHTML =
+      `<div class="faculty-card"><b>Unavailable</b><span>${esc((summary && summary.error) || "Try again.")}</span></div>`;
+    if (summary && /session/i.test(summary.error || "")) logoutNow(summary.error);
+    return;
+  }
+  facultyState.summary = summary;
+  facultyShell(tab, skeleton(2));
+
+  if (tab === "students") return facultyStudentsTab();
+  if (tab === "charts") return facultyChartsTab();
+  if (tab === "projects") return facultyProjectsTab();
+  if (tab === "sections") return facultySectionsTab();
+  return facultyOverviewTab();
+}
+
+/* ------------------------------------------------------------ overview -- */
+
+async function facultyOverviewTab() {
+  const s = facultyState.summary.summary || {};
   const cards = [
-    [s.total || 0, "Students"], [s.active || 0, "Active"],
-    [s.inactive || 0, "Inactive"], [s.completed || 0, "Completed"],
-    [s.projectsPending || 0, "Projects awaiting approval"],
-    [s.studentsNeedingAttention || 0, "Need attention"],
-    [s.doubts || 0, "Doubts asked"], [s.minutes || 0, "Learning minutes"]
+    [s.total, "Students"],
+    [s.active7, "Active this week"],
+    [s.averagePercent + "%", "Average progress"],
+    [s.completed, "Finished the course"],
+    [s.notStarted, "Not started"],
+    [s.blocked, "Blocked"],
+    [s.hours + "h", "Total learning time"],
+    [s.doubts, "Doubts asked"]
   ];
-  const recent = (data.students || []).slice().sort((a, b) => String(b.lastSeen || "").localeCompare(String(a.lastSeen || ""))).slice(0, 10);
-  return `<div class="faculty-grid">${cards.map(([value, label]) => `<div class="faculty-card"><b>${esc(value)}</b><span>${esc(label)}</span></div>`).join("")}</div>
-    <div class="step"><span class="step__n">Live</span><h3 class="step__t">Recently active students</h3></div>
-    ${facultyStudentTable(recent, false)}`;
+
+  $("#facultyBody").innerHTML = `
+    <div class="faculty-grid">${cards.map(([v, l]) =>
+      `<div class="faculty-card"><b>${esc(v == null ? 0 : v)}</b><span>${esc(l)}</span></div>`).join("")}</div>
+
+    <div class="step"><span class="step__n">Now</span><h3 class="step__t">Students who need you</h3></div>
+    <div id="attentionBox">${skeleton(2)}</div>
+
+    <div class="step"><span class="step__n">Live</span><h3 class="step__t">Most recently active</h3></div>
+    <div id="recentBox">${skeleton(2)}</div>`;
+
+  /* Stages two and three run side by side, each painting as it arrives. */
+  API.facultyAttention(student).then(res => {
+    const box = $("#attentionBox");
+    if (!box) return;
+    if (!res || !res.ok) return box.innerHTML = `<div class="faculty-card"><span>Could not load.</span></div>`;
+    const list = res.attention || [];
+    box.innerHTML = list.length
+      ? `<div class="attention">${list.slice(0, 8).map(a => `<div class="attn">
+          <div class="attn__main">
+            <div class="attn__n">${esc(a.name)} <small>· ${esc(a.section || "—")} · ${a.percent}%</small></div>
+            <div class="attn__r">${esc(a.reasons.join(" · "))}</div>
+          </div>
+          <button data-view-student="${esc(a.id)}">Open</button>
+        </div>`).join("")}${list.length > 8
+          ? `<p class="pager__info">and ${list.length - 8} more</p>` : ""}</div>`
+      : `<div class="faculty-card"><b>All clear</b><span>Nobody is flagged right now.</span></div>`;
+    bindStudentOpeners();
+  });
+
+  API.facultyStudents(student, { page: 1, pageSize: 10, sort: "recent" }).then(res => {
+    const box = $("#recentBox");
+    if (!box) return;
+    if (!res || !res.ok) return box.innerHTML = `<div class="faculty-card"><span>Could not load.</span></div>`;
+    box.innerHTML = facultyStudentTable(res.students || [], false);
+    bindStudentOpeners();
+  });
 }
 
-function facultyStudentsHtml(data) {
-  const sections = data.sections || [];
-  return `<div class="faculty-toolbar">
-    <input id="facultySearch" type="search" placeholder="Search ID, name or email">
-    <select id="facultySectionFilter"><option value="">All my sections</option>${sections.map(x => `<option>${esc(x)}</option>`).join("")}</select>
-    <select id="facultyStatusFilter"><option value="">All statuses</option><option>Active</option><option>Inactive</option><option>Blocked</option><option>Completed</option><option>Profile incomplete</option></select>
-    <button class="btn btn--quiet btn--sm" id="facultyRefresh">Refresh</button>
-  </div>
-  <div id="facultyStudentTable">${facultyStudentTable(data.students || [], true)}</div>`;
+/* ------------------------------------------------------------ students -- */
+
+async function facultyStudentsTab() {
+  const sections = facultyState.summary.sections || [];
+  $("#facultyBody").innerHTML = `
+    <div class="faculty-toolbar">
+      <input id="facSearch" type="search" placeholder="Search ID, name or email" value="${esc(facultyState.query)}">
+      <select id="facSection"><option value="">All my sections</option>${
+        sections.map(x => `<option ${facultyState.section === x ? "selected" : ""}>${esc(x)}</option>`).join("")}</select>
+      <select id="facStatus"><option value="">Any status</option>${
+        ["Active", "Blocked"].map(x => `<option ${facultyState.status === x ? "selected" : ""}>${esc(x)}</option>`).join("")}</select>
+      <select id="facSort">${
+        [["name", "Name"], ["progress", "Progress"], ["recent", "Recently active"], ["minutes", "Time spent"], ["flags", "Flags"]]
+          .map(([v, l]) => `<option value="${v}" ${facultyState.sort === v ? "selected" : ""}>${l}</option>`).join("")}</select>
+      <button class="btn btn--quiet btn--sm" id="facRefresh">Refresh</button>
+    </div>
+    <div id="facTable">${skeleton(3)}</div>`;
+
+  const run = () => loadFacultyPage();
+  let timer;
+  $("#facSearch").addEventListener("input", e => {
+    clearTimeout(timer);
+    timer = setTimeout(() => { facultyState.query = e.target.value.trim(); facultyState.page = 1; run(); }, 280);
+  });
+  $("#facSection").addEventListener("change", e => { facultyState.section = e.target.value; facultyState.page = 1; run(); });
+  $("#facStatus").addEventListener("change", e => { facultyState.status = e.target.value; facultyState.page = 1; run(); });
+  $("#facSort").addEventListener("change", e => { facultyState.sort = e.target.value; facultyState.page = 1; run(); });
+  $("#facRefresh").addEventListener("click", () => { API.clearCache("fac"); run(); });
+
+  run();
+}
+
+async function loadFacultyPage() {
+  const box = $("#facTable");
+  if (!box) return;
+  box.innerHTML = skeleton(3);
+
+  const res = await API.facultyStudents(student, facultyState);
+  if (!res || !res.ok) {
+    box.innerHTML = `<div class="faculty-card"><span>${esc((res && res.error) || "Could not load students.")}</span></div>`;
+    return;
+  }
+
+  box.innerHTML = facultyStudentTable(res.students || [], true) + pagerHtml(res);
+  bindStudentOpeners();
+  bindStudentActions();
+
+  $$('[data-page]', box).forEach(b => b.addEventListener("click", () => {
+    facultyState.page = Number(b.dataset.page);
+    loadFacultyPage();
+  }));
+}
+
+function pagerHtml(res) {
+  if (res.pages <= 1) {
+    return `<div class="pager"><span class="pager__info">${res.total} student${res.total === 1 ? "" : "s"}</span></div>`;
+  }
+  const nums = [];
+  const from = Math.max(1, res.page - 2), to = Math.min(res.pages, res.page + 2);
+  for (let i = from; i <= to; i++) nums.push(i);
+
+  return `<div class="pager">
+    <span class="pager__info">${(res.page - 1) * res.pageSize + 1}–${Math.min(res.page * res.pageSize, res.total)} of ${res.total}</span>
+    <button data-page="${res.page - 1}" ${res.page <= 1 ? "disabled" : ""}>Previous</button>
+    ${nums.map(n => `<button data-page="${n}" class="${n === res.page ? "is-current" : ""}">${n}</button>`).join("")}
+    <button data-page="${res.page + 1}" ${res.page >= res.pages ? "disabled" : ""}>Next</button>
+  </div>`;
 }
 
 function facultyStudentTable(rows, actions) {
-  if (!rows.length) return `<div class="faculty-card"><span>No students are available in your assigned sections yet.</span></div>`;
+  if (!rows.length) {
+    return `<div class="faculty-card"><b>Nobody yet</b><span>No students match this view.</span></div>`;
+  }
   return `<div class="faculty-table-wrap"><table class="faculty-table">
-    <thead><tr><th>Student</th><th>Section</th><th>Status</th><th>Progress</th><th>Current step</th><th>Last active</th><th>Tests / Projects</th>${actions ? "<th>Actions</th>" : ""}</tr></thead>
-    <tbody>${rows.map(s => `<tr data-student-row data-search="${esc((s.id + " " + s.name + " " + s.email + " " + s.section).toLowerCase())}" data-section="${esc(s.section)}" data-status="${esc(s.status)}">
-      <td><strong>${esc(s.name)}</strong><br><small>${esc(s.id)} · ${esc(s.email || "No email")}</small></td>
+    <thead><tr>
+      <th>Student</th><th>Section</th><th>Status</th><th>Progress</th>
+      <th>Currently on</th><th>Last active</th><th>Time</th>${actions ? "<th>Actions</th>" : ""}
+    </tr></thead>
+    <tbody>${rows.map(s => `<tr>
+      <td><strong>${esc(s.name)}</strong><br><small>${esc(s.id)}${s.email ? " · " + esc(s.email) : ""}</small></td>
       <td>${esc(s.section || "—")}</td>
-      <td><span class="status-chip" data-status="${esc(s.status)}">${esc(s.status)}</span></td>
-      <td><div class="faculty-progress"><div class="faculty-progress__bar"><i style="width:${Math.round((s.weightedProgress || 0) * 100)}%"></i></div><small>${Math.round((s.weightedProgress || 0) * 100)}% weighted · ${s.stepsDone}/${s.stepsTotal}</small></div></td>
+      <td><span class="status-chip" data-status="${esc(s.status)}">${esc(s.status)}</span>${
+        s.flags >= 3 ? `<br><small style="color:var(--madder)">${s.flags} flags</small>` : ""}</td>
+      <td><div class="faculty-progress">
+        <div class="faculty-progress__bar"><i style="width:${Math.min(100, s.percent)}%"></i></div>
+        <small>${s.percent}% · ${s.stepsDone}/${s.stepsTotal}</small>
+      </div></td>
       <td>${esc(s.currentUnit || "—")}<br><small>${esc(s.currentStep || "Not started")}</small></td>
-      <td>${s.lastSeen ? esc(new Date(s.lastSeen).toLocaleString()) : "—"}</td>
-      <td><small>${esc(s.testSummary || "").replace(/\n/g, "<br>")}<br>${esc(s.projectSummary || "").replace(/\n/g, "<br>")}</small></td>
+      <td>${s.lastActivity ? esc(shortDate(s.lastActivity)) : "—"}</td>
+      <td><small>${Math.round(s.minutes)} min<br>${s.doubts} doubts</small></td>
       ${actions ? `<td><div class="actions">
         <button class="is-primary" data-view-student="${esc(s.id)}">View</button>
-        ${s.status === "Blocked" ? `<button data-student-action="Unblock" data-id="${esc(s.id)}">Unblock</button>` : `<button data-student-action="Block" data-id="${esc(s.id)}">Block</button>`}
-        <button data-student-action="Reset Test" data-id="${esc(s.id)}">Reset test</button>
-        <button data-student-action="Reset Project" data-id="${esc(s.id)}">Reset project</button>
+        ${s.status === "Blocked"
+          ? `<button data-student-action="Unblock" data-id="${esc(s.id)}">Unblock</button>`
+          : `<button data-student-action="Block" data-id="${esc(s.id)}">Block</button>`}
+        <button data-student-action="Reset Unit" data-id="${esc(s.id)}">Reset unit</button>
+        <button data-student-action="Reset All Progress" data-id="${esc(s.id)}">Clear all</button>
         <button class="is-danger" data-student-action="Delete Permanently" data-id="${esc(s.id)}">Delete</button>
       </div></td>` : ""}
     </tr>`).join("")}</tbody>
   </table></div>`;
 }
 
-function facultyProjectsHtml(data) {
-  const rows = data.pendingProjects || [];
-  if (!rows.length) return `<div class="faculty-card"><b>0</b><span>No project submissions are waiting for approval.</span></div>`;
+function shortDate(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return "—";
+  const days = Math.floor((Date.now() - d.getTime()) / 86400000);
+  if (days === 0) return "Today " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (days === 1) return "Yesterday";
+  if (days < 7) return days + " days ago";
+  return d.toLocaleDateString();
+}
+
+function bindStudentOpeners() {
+  $$('[data-view-student]', $("#main")).forEach(b =>
+    b.addEventListener("click", () => openFacultyStudent(b.dataset.viewStudent)));
+}
+
+function bindStudentActions() {
+  $$('[data-student-action]', $("#main")).forEach(b =>
+    b.addEventListener("click", () => runFacultyStudentAction(b.dataset.studentAction, b.dataset.id)));
+}
+
+/* -------------------------------------------------------------- charts -- */
+
+async function facultyChartsTab() {
+  $("#facultyBody").innerHTML = skeleton(3);
+  const res = await API.facultyCharts(student);
+  if (!res || !res.ok) {
+    $("#facultyBody").innerHTML = `<div class="faculty-card"><span>${esc((res && res.error) || "Charts unavailable.")}</span></div>`;
+    return;
+  }
+
+  $("#facultyBody").innerHTML = `<div class="fcharts">
+    ${barChart("How far the class has got", "Students in each 10% band of the course",
+        res.bands.map((v, i) => ({ label: i === 10 ? "100%" : `${i * 10}s`, value: v })))}
+    ${barChart("Where students are working", "How many are sitting in each unit right now",
+        (res.byUnit || []).map(x => ({ label: x.unit || "—", value: x.students })), "bar--alt")}
+    ${sectionChart(res.bySection || [])}
+    ${donutChart(res.byStatus || [])}
+  </div>
+  <div class="step"><span class="step__n">Top</span><h3 class="step__t">Furthest along</h3></div>
+  ${leaderTable(res.topStudents || [])}`;
+
+  bindStudentOpeners();
+}
+
+/* Charts are hand-drawn SVG on purpose — no chart library to download, so the
+   dashboard stays fast, works offline and follows the theme automatically. */
+function barChart(title, sub, data, cls = "bar") {
+  const max = Math.max(1, ...data.map(d => d.value));
+  const w = 480, h = 200, pad = 34;
+  const bw = (w - pad * 2) / Math.max(data.length, 1);
+
+  return `<div class="fchart">
+    <h4 class="fchart__t">${esc(title)}</h4>
+    <p class="fchart__s">${esc(sub)}</p>
+    <svg viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(title)}">
+      ${[0, 0.5, 1].map(f => `<line class="grid" x1="${pad}" x2="${w - 6}"
+          y1="${h - pad - f * (h - pad * 1.6)}" y2="${h - pad - f * (h - pad * 1.6)}"/>`).join("")}
+      <line class="axis" x1="${pad}" y1="${h - pad}" x2="${w - 6}" y2="${h - pad}"/>
+      ${data.map((d, i) => {
+        const bh = (d.value / max) * (h - pad * 1.6);
+        const x = pad + i * bw + bw * 0.15;
+        return `<rect class="${cls}" x="${x}" y="${h - pad - bh}" width="${bw * 0.7}" height="${Math.max(bh, d.value ? 2 : 0)}" rx="3"/>
+          ${d.value ? `<text class="gvalue" x="${x + bw * 0.35}" y="${h - pad - bh - 5}" text-anchor="middle">${d.value}</text>` : ""}
+          <text class="glabel" x="${x + bw * 0.35}" y="${h - pad + 15}" text-anchor="middle">${esc(String(d.label).slice(0, 8))}</text>`;
+      }).join("")}
+    </svg>
+  </div>`;
+}
+
+function sectionChart(rows) {
+  if (!rows.length) return `<div class="fchart"><h4 class="fchart__t">Sections</h4><p class="fchart__s">No sections yet.</p></div>`;
+  const w = 480, rowH = 30, h = rows.length * rowH + 30;
+  const barMax = w - 190;
+
+  return `<div class="fchart">
+    <h4 class="fchart__t">Section comparison</h4>
+    <p class="fchart__s">Average progress, and how many students are in each</p>
+    <svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Average progress per section">
+      ${rows.map((r, i) => {
+        const y = i * rowH + 14;
+        const bw = Math.max((r.averagePercent / 100) * barMax, 2);
+        return `<text class="glabel" x="0" y="${y + 12}">${esc(String(r.section).slice(0, 14))}</text>
+          <rect class="grid" x="120" y="${y}" width="${barMax}" height="16" rx="4" fill="var(--indigo-700)" stroke="none"/>
+          <rect class="bar" x="120" y="${y}" width="${bw}" height="16" rx="4"/>
+          <text class="gvalue" x="${w - 4}" y="${y + 12}" text-anchor="end">${r.averagePercent}% · ${r.students}</text>`;
+      }).join("")}
+    </svg>
+  </div>`;
+}
+
+function donutChart(rows) {
+  const total = rows.reduce((a, r) => a + r.students, 0) || 1;
+  const colours = ["var(--peacock)", "var(--madder)", "var(--marigold)", "var(--indigo-600)"];
+  const cx = 90, cy = 90, r = 62, sw = 26;
+  const circumference = 2 * Math.PI * r;
+  let offset = 0;
+
+  const arcs = rows.map((row, i) => {
+    const frac = row.students / total;
+    const dash = `${frac * circumference} ${circumference}`;
+    const seg = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none"
+        stroke="${colours[i % colours.length]}" stroke-width="${sw}"
+        stroke-dasharray="${dash}" stroke-dashoffset="${-offset}"
+        transform="rotate(-90 ${cx} ${cy})"/>`;
+    offset += frac * circumference;
+    return seg;
+  }).join("");
+
+  return `<div class="fchart">
+    <h4 class="fchart__t">Account status</h4>
+    <p class="fchart__s">Everyone in your sections</p>
+    <svg viewBox="0 0 180 180" style="max-width:200px;margin:0 auto" role="img" aria-label="Status split">
+      <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--indigo-700)" stroke-width="${sw}"/>
+      ${arcs}
+      <text class="donut__hole" x="${cx}" y="${cy - 2}" text-anchor="middle" font-size="26">${total}</text>
+      <text class="donut__sub" x="${cx}" y="${cy + 18}" text-anchor="middle">students</text>
+    </svg>
+    <div class="legend">${rows.map((row, i) =>
+      `<span><i style="background:${colours[i % colours.length]}"></i>${esc(row.status)} · ${row.students}</span>`).join("")}</div>
+  </div>`;
+}
+
+function leaderTable(rows) {
+  if (!rows.length) return `<div class="faculty-card"><span>No progress recorded yet.</span></div>`;
   return `<div class="faculty-table-wrap"><table class="faculty-table">
-    <thead><tr><th>Student</th><th>Unit / Project</th><th>Submission</th><th>AI suggestion</th><th>Review</th></tr></thead>
-    <tbody>${rows.map(p => `<tr>
-      <td><strong>${esc(p.studentName)}</strong><br><small>${esc(p.studentId)} · ${esc(p.section)}</small></td>
-      <td>${esc(p.unit)}<br><small>${esc(p.projectName)}</small></td>
-      <td><a href="${esc(p.url)}" target="_blank" rel="noopener">Open ${esc(p.submissionType || "submission")}</a><br><small>${esc(p.fileName || "")}</small></td>
-      <td><strong>${p.suggestedScore === "" || p.suggestedScore == null ? "—" : esc(p.suggestedScore + "/100")}</strong><br><small>${esc(p.aiSummary || p.aiStatus || "")}</small></td>
-      <td><button class="btn btn--go btn--sm" data-approve-project data-id="${esc(p.studentId)}" data-unit="${esc(p.unit)}" data-score="${esc(p.suggestedScore === "" ? 0 : p.suggestedScore)}">Approve / edit score</button></td>
+    <thead><tr><th>#</th><th>Student</th><th>Progress</th><th>Time</th><th></th></tr></thead>
+    <tbody>${rows.map((s, i) => `<tr>
+      <td>${i + 1}</td>
+      <td><strong>${esc(s.name)}</strong><br><small>${esc(s.id)}</small></td>
+      <td><div class="faculty-progress"><div class="faculty-progress__bar"><i style="width:${s.percent}%"></i></div><small>${s.percent}%</small></div></td>
+      <td>${s.minutes} min</td>
+      <td><button data-view-student="${esc(s.id)}">View</button></td>
     </tr>`).join("")}</tbody>
   </table></div>`;
 }
 
-function facultySectionsHtml(data) {
-  return `<div class="faculty-card">
-    <h3>Create or join a section</h3>
-    <p>Create a section once. It immediately appears in first-time student registration and in your faculty filters.</p>
-    <div class="faculty-toolbar"><input id="newSectionName" placeholder="Example: Section A"><button class="btn btn--go btn--sm" id="createSectionBtn">Create / assign</button></div>
-    <p><strong>Your sections:</strong> ${esc((data.sections || []).join(", ") || "None yet")}</p>
-  </div>`;
+/* ------------------------------------------------------------ projects -- */
+
+async function facultyProjectsTab() {
+  $("#facultyBody").innerHTML = skeleton(2);
+  const res = await API.facultyProjects(student);
+  if (!res || !res.ok) {
+    $("#facultyBody").innerHTML = `<div class="faculty-card"><span>${esc((res && res.error) || "Could not load.")}</span></div>`;
+    return;
+  }
+  const rows = res.projects || [];
+  $("#facultyBody").innerHTML = rows.length
+    ? `<div class="faculty-table-wrap"><table class="faculty-table">
+        <thead><tr><th>Student</th><th>Unit</th><th>Submission</th><th>AI suggestion</th><th></th></tr></thead>
+        <tbody>${rows.map(p => `<tr>
+          <td><strong>${esc(p.studentName)}</strong><br><small>${esc(p.studentId)} · ${esc(p.section)}</small></td>
+          <td>${esc(p.unit)}<br><small>${esc(p.projectName)}</small></td>
+          <td><a href="${esc(p.link)}" target="_blank" rel="noopener">Open submission</a><br><small>${esc(shortDate(p.submittedAt))}</small></td>
+          <td><strong>${p.suggestedScore === "" || p.suggestedScore == null ? "—" : esc(p.suggestedScore + "/100")}</strong>
+              <br><small>${esc(String(p.aiSummary || "").slice(0, 160))}</small></td>
+          <td><button class="btn btn--go btn--sm" data-approve data-id="${esc(p.studentId)}"
+              data-unit="${esc(p.unit)}" data-score="${esc(p.suggestedScore || 0)}">Approve</button></td>
+        </tr>`).join("")}</tbody></table></div>`
+    : `<div class="faculty-card"><b>Nothing waiting</b><span>No projects need approval right now.</span></div>`;
+
+  $$('[data-approve]', $("#main")).forEach(b => b.addEventListener("click", () =>
+    approveFacultyProject(b.dataset.id, b.dataset.unit, b.dataset.score)));
 }
 
-function bindFacultyEvents(tab, data) {
-  $$('[data-faculty-tab]', $("#main")).forEach(btn => btn.addEventListener("click", () => go({ name: "faculty", facultyTab: btn.dataset.facultyTab })));
-  const refresh = $("#facultyRefresh");
-  if (refresh) refresh.addEventListener("click", () => paintFacultyConsole(tab));
+/* ------------------------------------------------------------ sections -- */
 
-  const filter = () => {
-    const q = String($("#facultySearch")?.value || "").trim().toLowerCase();
-    const section = $("#facultySectionFilter")?.value || "";
-    const status = $("#facultyStatusFilter")?.value || "";
-    $$('[data-student-row]').forEach(row => {
-      row.hidden = !!((q && !row.dataset.search.includes(q)) || (section && row.dataset.section !== section) || (status && row.dataset.status !== status));
-    });
-  };
-  [$("#facultySearch"), $("#facultySectionFilter"), $("#facultyStatusFilter")].filter(Boolean).forEach(el => el.addEventListener("input", filter));
+async function facultySectionsTab() {
+  const s = facultyState.summary;
+  $("#facultyBody").innerHTML = `<div class="faculty-card">
+      <h3>Your sections</h3>
+      <p>Create a section once. It appears straight away in student registration and in your filters.</p>
+      <div class="faculty-toolbar">
+        <input id="newSection" placeholder="For example: CS 1st Year A">
+        <button class="btn btn--go btn--sm" id="createSection">Create</button>
+      </div>
+      <p><strong>You manage:</strong> ${esc((s.sections || []).join(", ") || "None yet")}</p>
+      ${s.isAdmin ? `<p><strong>All sections on the system:</strong> ${esc((s.allSections || []).join(", ") || "None")}</p>` : ""}
+    </div>`;
 
-  $$('[data-view-student]', $("#main")).forEach(btn => btn.addEventListener("click", () => openFacultyStudent(btn.dataset.viewStudent)));
-  $$('[data-student-action]', $("#main")).forEach(btn => btn.addEventListener("click", () => runFacultyStudentAction(btn.dataset.studentAction, btn.dataset.id)));
-  $$('[data-approve-project]', $("#main")).forEach(btn => btn.addEventListener("click", () => approveFacultyProject(btn.dataset.id, btn.dataset.unit, btn.dataset.score)));
-
-  const create = $("#createSectionBtn");
-  if (create) create.addEventListener("click", async () => {
-    const name = $("#newSectionName").value.trim();
-    if (!name) return toast("Enter a section name.");
-    create.disabled = true;
+  $("#createSection").addEventListener("click", async () => {
+    const name = $("#newSection").value.trim();
+    if (!name) return toast("Type a section name first.");
+    const btn = $("#createSection");
+    btn.disabled = true;
     const res = await API.createSection(student, name);
-    create.disabled = false;
-    if (!res || !res.ok) return toast((res && res.error) || "Section was not created.");
-    await loadSections();
-    toast("Section is ready.");
+    btn.disabled = false;
+    if (!res || !res.ok) return toast((res && res.error) || "Could not create that section.");
+    toast("Section created.");
+    facultyState.summary = null;
     paintFacultyConsole("sections");
   });
 }
 
+/* -------------------------------------------------------- one student --- */
+
 async function openFacultyStudent(studentId) {
-  $("#main").innerHTML = `<div class="wrap"><div class="faculty-card"><span class="spin"></span> Loading student details…</div></div>`;
-  const res = await API.facultyStudent(student, studentId);
-  if (!res || !res.ok) return toast((res && res.error) || "Student details could not be loaded.");
+  $("#main").innerHTML = `<div class="wrap"><div class="faculty-card"><span class="spin"></span> Loading…</div></div>`;
+  const res = await API.facultyStudent(student, studentId, true);
+  if (!res || !res.ok) {
+    toast((res && res.error) || "Could not load that student.");
+    return paintFacultyConsole(facultyState.tab);
+  }
+
   const s = res.student;
+  const a = s.account;
+  const sum = s.summary;
+  const units = Object.keys(s.state.tests || {});
+
   $("#main").innerHTML = `<div class="wrap">
-    <button class="btn btn--quiet btn--sm" id="backFacultyStudents">← Back to students</button>
-    <header class="thead"><p class="thead__k">${esc(s.section)}</p><h2 class="thead__t">${esc(s.name)}</h2><p class="thead__s">${esc(s.id)} · ${esc(s.email)}</p></header>
+    <button class="btn btn--quiet btn--sm" id="backToList">← Back</button>
+    <header class="thead">
+      <p class="thead__k">${esc(a.section || "No section")}</p>
+      <h2 class="thead__t">${esc(a.name)}</h2>
+      <p class="thead__s">${esc(a.id)} · ${esc(a.email || "no email")} · ${esc(sum.status)}</p>
+    </header>
+
+    <div class="faculty-grid">
+      <div class="faculty-card"><b>${sum.percent}%</b><span>Course complete</span></div>
+      <div class="faculty-card"><b>${sum.stepsDone}/${sum.stepsTotal}</b><span>Steps done</span></div>
+      <div class="faculty-card"><b>${Math.round(sum.minutes)}</b><span>Minutes on site</span></div>
+      <div class="faculty-card"><b>${sum.sessions}</b><span>Sessions</span></div>
+      <div class="faculty-card"><b>${sum.doubts}</b><span>Doubts asked</span></div>
+      <div class="faculty-card"><b>${sum.flags}</b><span>Integrity flags</span></div>
+    </div>
+
     <div class="faculty-detail">
-      <section><h4>Progress</h4><dl><dt>Status</dt><dd>${esc(s.status)}</dd><dt>Weighted progress</dt><dd>${Math.round((s.weightedProgress || 0) * 100)}%</dd><dt>Steps</dt><dd>${s.stepsDone}/${s.stepsTotal}</dd><dt>Current</dt><dd>${esc(s.currentUnit || "—")} — ${esc(s.currentStep || "Not started")}</dd><dt>Unit summary</dt><dd>${esc(s.unitSummary || "")}</dd></dl></section>
-      <section><h4>Engagement</h4><dl><dt>Last active</dt><dd>${s.lastSeen ? esc(new Date(s.lastSeen).toLocaleString()) : "—"}</dd><dt>Minutes</dt><dd>${esc(s.minutes)}</dd><dt>Sessions</dt><dd>${esc(s.sessions)}</dd><dt>Doubts</dt><dd>${esc(s.doubts)}</dd><dt>Integrity flags</dt><dd>${esc(s.flags)}</dd></dl></section>
-      <section><h4>Tests</h4><dl>${Object.keys(s.tests || {}).map(unit => `<dt>${esc(unit)}</dt><dd>${esc((s.tests[unit].attempts || []).length ? `${s.tests[unit].best}/${s.tests[unit].total} · ${s.tests[unit].passed ? "Pass" : "Not cleared"}` : "Not attempted")}</dd>`).join("") || "<dd>No test attempts yet.</dd>"}</dl></section>
-      <section><h4>Projects</h4><dl>${Object.keys(s.projects || {}).map(unit => `<dt>${esc(unit)}</dt><dd>${esc(s.projects[unit].submissionStatus || "Not submitted")}${s.projects[unit].approvedScore !== undefined && s.projects[unit].approvedScore !== "" ? ` · ${esc(s.projects[unit].approvedScore)}/100` : ""}</dd>`).join("") || "<dd>No project submissions yet.</dd>"}</dl></section>
-    </div>${credit()}
+      <section><h4>Where they are</h4><dl>
+        <dt>Currently on</dt><dd>${esc(sum.currentUnit || "—")} — ${esc(sum.currentStep || "Not started")}</dd>
+        <dt>Units finished</dt><dd>${esc(sum.unitsCompleted || "None yet")}</dd>
+        <dt>Last active</dt><dd>${sum.lastActivity ? esc(new Date(sum.lastActivity).toLocaleString()) : "—"}</dd>
+      </dl></section>
+      <section><h4>Tests</h4><dl>${units.length
+        ? units.map(u => {
+            const t = s.state.tests[u];
+            return `<dt>${esc(u)}</dt><dd>${t.best}/${t.total} · ${t.passed ? "Passed" : "Not cleared"} · ${t.attempts} attempt${t.attempts === 1 ? "" : "s"}</dd>`;
+          }).join("")
+        : "<dd>No attempts yet.</dd>"}</dl></section>
+      <section><h4>Projects</h4><dl>${Object.keys(s.state.projects || {}).length
+        ? Object.keys(s.state.projects).map(u => {
+            const p = s.state.projects[u];
+            return `<dt>${esc(u)}</dt><dd>${esc(p.submissionStatus)}${p.approvedScore !== "" && p.approvedScore != null ? ` · ${p.approvedScore}/100` : ""}</dd>`;
+          }).join("")
+        : "<dd>Nothing submitted yet.</dd>"}</dl></section>
+    </div>
+
+    <div class="step"><span class="step__n">Do</span><h3 class="step__t">Faculty actions</h3></div>
+    <div class="faculty-card">
+      <div class="actions">
+        ${sum.status === "Blocked"
+          ? `<button data-student-action="Unblock" data-id="${esc(a.id)}">Unblock</button>`
+          : `<button data-student-action="Block" data-id="${esc(a.id)}">Block</button>`}
+        <button data-student-action="Reset Test" data-id="${esc(a.id)}">Reset a test</button>
+        <button data-student-action="Reset Project" data-id="${esc(a.id)}">Reset a project</button>
+        <button data-student-action="Reset Unit" data-id="${esc(a.id)}">Reset a whole unit</button>
+        <button data-student-action="Reset All Progress" data-id="${esc(a.id)}">Clear all progress</button>
+        <button class="is-danger" data-student-action="Delete Permanently" data-id="${esc(a.id)}">Delete account</button>
+      </div>
+    </div>
+
+    ${historyBlock("Recent doubts", (s.doubts || []).slice().reverse(), d =>
+      `<strong>${esc(d.question)}</strong><br><small>${esc(d.context)} · ${esc(shortDate(d.when))}</small>`)}
+    ${historyBlock("Test history", s.tests || [], t =>
+      `${esc(t.unit)} — ${t.score}/${t.total} (${t.percent}%) · ${esc(t.result)}<br><small>${esc(t.reason)} · ${esc(shortDate(t.when))}</small>`)}
+    ${historyBlock("Integrity events", (s.integrity || []).slice().reverse(), i =>
+      `${esc(i.event)}<br><small>${esc(i.where)} · ${esc(shortDate(i.when))}</small>`)}
+
+    ${credit()}
   </div>`;
-  $("#backFacultyStudents").addEventListener("click", () => go({ name: "faculty", facultyTab: "students" }));
+
+  $("#backToList").addEventListener("click", () => paintFacultyConsole(facultyState.tab));
+  bindStudentActions();
 }
 
+function historyBlock(title, rows, render) {
+  if (!rows || !rows.length) return "";
+  return `<div class="step"><span class="step__n">Log</span><h3 class="step__t">${esc(title)}</h3></div>
+    <div class="attention">${rows.slice(0, 12).map(r =>
+      `<div class="attn" style="background:rgba(242,160,61,.08);border-left-color:var(--marigold)">
+        <div class="attn__main">${render(r)}</div>
+      </div>`).join("")}</div>`;
+}
+
+/* --------------------------------------------------------- actions ------ */
+
 async function runFacultyStudentAction(operation, studentId) {
-  let unit = "";
-  let confirmation = "";
-  if (operation === "Reset Test" || operation === "Reset Project") {
-    unit = prompt("Type the unit exactly, for example Unit 1:", "Unit 1") || "";
+  let unit = "", confirmation = "";
+
+  if (/^Reset (Test|Project|Unit)$/.test(operation)) {
+    const units = COURSE.map(u => u.unit);
+    unit = prompt(`Which unit? (${units.join(", ")})`, units[0] || "Unit 1") || "";
     if (!unit) return;
   }
-  if (operation === "Delete Permanently") {
-    confirmation = prompt(`Type ${studentId} to permanently delete this student:`, "") || "";
-    if (!confirmation) return;
-  } else if (!confirm(`${operation} ${studentId}?`)) return;
 
+  if (operation === "Delete Permanently") {
+    confirmation = prompt(`This erases every trace of ${studentId}.\n\nType ${studentId} to confirm:`, "") || "";
+    if (confirmation !== studentId) return toast("Deletion cancelled.");
+  } else if (operation === "Reset All Progress") {
+    if (!confirm(`Clear ALL progress for ${studentId}?\n\nThe account stays, but every topic, test and project is wiped.`)) return;
+  } else if (!confirm(`${operation} — ${studentId}?`)) {
+    return;
+  }
+
+  toast("Working…");
   const res = await API.studentAction(student, studentId, operation, unit, confirmation);
-  if (!res || !res.ok) return toast((res && res.error) || "The action failed.");
-  toast(res.result || "Action completed.");
-  paintFacultyConsole("students");
+  if (!res || !res.ok) return toast((res && res.error) || "That action failed.");
+  toast(res.result || "Done.");
+  paintFacultyConsole(facultyState.tab);
 }
 
 async function approveFacultyProject(studentId, unit, suggested) {
-  const scoreText = prompt("Approved score out of 100:", String(suggested || 0));
-  if (scoreText == null) return;
-  const score = Number(scoreText);
-  if (!Number.isFinite(score) || score < 0 || score > 100) return toast("Use a score from 0 to 100.");
-  const feedback = prompt("Faculty feedback visible to the student:", "Reviewed and approved.");
+  const raw = prompt("Approved score out of 100:", String(suggested || 0));
+  if (raw == null) return;
+  const score = Number(raw);
+  if (!Number.isFinite(score) || score < 0 || score > 100) return toast("Enter a score from 0 to 100.");
+  const feedback = prompt("Feedback the student will see:", "Reviewed and approved.");
   if (feedback == null) return;
+
   const res = await API.approveProject(student, studentId, unit, score, feedback);
   if (!res || !res.ok) return toast((res && res.error) || "Approval failed.");
-  toast("Project score approved.");
+  toast(res.result || "Approved.");
   paintFacultyConsole("projects");
 }
 
