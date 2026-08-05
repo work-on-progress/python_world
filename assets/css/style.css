@@ -35,6 +35,110 @@
 
 *,*::before,*::after{box-sizing:border-box}
 
+/* ==========================================================================
+   THEMES
+   Every screen — sign-in, student, faculty — reads these variables, so a
+   single attribute on <html> repaints the whole product.
+
+   The names still say "indigo" because 47KB of stylesheet already refers to
+   them. Read them as roles rather than colours:
+     --indigo-900  the page behind everything
+     --indigo-800  cards, panels, the top bar
+     --indigo-700  a raised control on a card
+     --indigo-600  muted lines and inactive marks
+     --chalk       text sitting on those surfaces
+     --paper       the reading surface for notes, and the toast
+     --ink         text sitting on --paper
+   ========================================================================== */
+
+:root,
+html[data-theme="dark-galaxy"]{
+  --indigo-900:#0F1730; --indigo-800:#141F3E; --indigo-700:#1C2A52;
+  --indigo-600:#27386B; --indigo-line:rgba(233,229,215,.14);
+  --chalk:#EFEDE4; --chalk-dim:#DFDBCD; --paper:#EFEDE4;
+  --ink:#161A28; --ink-soft:#4A5069;
+  --marigold:#F2A03D; --marigold-deep:#D67F19;
+  --peacock:#28A08F; --madder:#CF4A3C;
+  --muted:#8B93B4; --muted-soft:#9AA2C0;
+  --shadow:rgba(0,0,0,.45);
+  color-scheme:dark;
+}
+
+html[data-theme="classic-white"]{
+  --indigo-900:#F4F5F8; --indigo-800:#FFFFFF; --indigo-700:#EDF0F6;
+  --indigo-600:#C9D2E4; --indigo-line:rgba(22,26,40,.14);
+  --chalk:#161A28; --chalk-dim:#3A4157; --paper:#FFFFFF;
+  --ink:#161A28; --ink-soft:#4A5069;
+  --marigold:#1D4ED8; --marigold-deep:#1E3A8A;
+  --peacock:#0F766E; --madder:#B91C1C;
+  --muted:#5A6480; --muted-soft:#6B7590;
+  --shadow:rgba(22,26,40,.14);
+  color-scheme:light;
+}
+
+html[data-theme="ocean-blue"]{
+  --indigo-900:#07202E; --indigo-800:#0C2F42; --indigo-700:#134259;
+  --indigo-600:#1D5B76; --indigo-line:rgba(214,240,248,.16);
+  --chalk:#E6F4F9; --chalk-dim:#C6E2ED; --paper:#EAF6FA;
+  --ink:#062533; --ink-soft:#28596E;
+  --marigold:#22D3EE; --marigold-deep:#0E9AB4;
+  --peacock:#2DD4BF; --madder:#F0736A;
+  --muted:#8AB4C6; --muted-soft:#A2C6D5;
+  --shadow:rgba(0,0,0,.45);
+  color-scheme:dark;
+}
+
+html[data-theme="forest-green"]{
+  --indigo-900:#0C1F16; --indigo-800:#112C20; --indigo-700:#193F2E;
+  --indigo-600:#24573F; --indigo-line:rgba(220,240,228,.16);
+  --chalk:#E8F3EC; --chalk-dim:#C8E0D2; --paper:#EDF6F0;
+  --ink:#0B2418; --ink-soft:#2C5442;
+  --marigold:#4ADE80; --marigold-deep:#1F9D55;
+  --peacock:#2DD4BF; --madder:#EF7A6D;
+  --muted:#8FB6A0; --muted-soft:#A6C7B4;
+  --shadow:rgba(0,0,0,.45);
+  color-scheme:dark;
+}
+
+html[data-theme="sunset-warm"]{
+  --indigo-900:#231311; --indigo-800:#311C18; --indigo-700:#452722;
+  --indigo-600:#5E362E; --indigo-line:rgba(248,228,218,.16);
+  --chalk:#F8EDE6; --chalk-dim:#E7D2C6; --paper:#FBF2EC;
+  --ink:#2A1610; --ink-soft:#5A3B30;
+  --marigold:#FBAF3F; --marigold-deep:#D97706;
+  --peacock:#F472B6; --madder:#EF4444;
+  --muted:#C0A091; --muted-soft:#D0B3A4;
+  --shadow:rgba(0,0,0,.5);
+  color-scheme:dark;
+}
+
+/* Light themes need a touch more contrast on the dark-by-default code blocks,
+   which stay dark on purpose so code always looks like code. */
+html[data-theme="classic-white"] .paper pre,
+html[data-theme="classic-white"] .shell,
+html[data-theme="classic-white"] .editor,
+html[data-theme="classic-white"] .out{
+  background:#12182B;
+  color:#E8EAF2;
+}
+html[data-theme="classic-white"] .paper pre code{color:#E8EAF2}
+html[data-theme="classic-white"] .box--dark text,
+html[data-theme="classic-white"] .fig text.on-dark{fill:#E8EAF2}
+html[data-theme="classic-white"] .btn--go{color:#fff}
+html[data-theme="classic-white"] .whotag{color:#fff}
+html[data-theme="classic-white"] .toast{box-shadow:0 12px 30px rgba(22,26,40,.22)}
+
+/* Repaint smoothly rather than flashing when the theme changes. */
+html.theme-anim,
+html.theme-anim body,
+html.theme-anim .topbar,
+html.theme-anim .rail,
+html.theme-anim .faculty-card{
+  transition:background-color .25s ease,color .25s ease,border-color .25s ease;
+}
+
+
+
 /* Any element with the hidden attribute stays hidden, whatever display value
    its own rule sets. Without this, .app{display:flex} and .gate{display:grid}
    quietly beat the browser's default [hidden] rule. */
@@ -327,7 +431,7 @@ button,input,textarea{font:inherit;color:inherit}
 
 /* ---------- notes: chalk paper ---------- */
 .paper{
-  background:var(--chalk);color:var(--ink);
+  background:var(--paper);color:var(--ink);
   border-radius:var(--r-md);
   padding:clamp(1.2rem,3.4vw,2.2rem);
   font-family:var(--prose);font-size:1.06rem;line-height:1.68;
@@ -622,7 +726,7 @@ button,input,textarea{font:inherit;color:inherit}
 /* ---------- toast ---------- */
 .toast{
   position:fixed;left:50%;bottom:1.5rem;transform:translateX(-50%);
-  z-index:80;background:var(--chalk);color:var(--ink);
+  z-index:80;background:var(--paper);color:var(--ink);
   padding:.75rem 1.2rem;border-radius:99px;font-weight:700;font-size:.92rem;
   box-shadow:0 12px 30px rgba(0,0,0,.4);
   animation:rise .3s cubic-bezier(.2,.8,.3,1);
@@ -968,7 +1072,7 @@ button,input,textarea{font:inherit;color:inherit}
    UNIT PROJECT
    ========================================================================== */
 .brief{
-  background:var(--chalk);color:var(--ink);
+  background:var(--paper);color:var(--ink);
   border-radius:var(--r-md);padding:clamp(1.2rem,3.4vw,2rem);
   font-family:var(--prose);font-size:1.05rem;line-height:1.65;
   box-shadow:0 14px 34px rgba(0,0,0,.3);margin-bottom:1.6rem;
@@ -1192,4 +1296,137 @@ button,input,textarea{font:inherit;color:inherit}
   .faculty-nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .faculty-detail { grid-template-columns: 1fr; }
   .submit__choice { grid-template-columns: 1fr; }
+}
+
+/* ==========================================================================
+   THEME PICKER
+   ========================================================================== */
+.themebtn{
+  display:inline-flex;align-items:center;gap:.45rem;
+  background:transparent;border:1px solid var(--indigo-line);
+  color:var(--chalk);border-radius:99px;
+  padding:.4rem .7rem;font-size:.8rem;font-weight:700;cursor:pointer;
+}
+.themebtn:hover{border-color:var(--marigold)}
+.themebtn__dots{display:inline-flex;gap:2px}
+.themebtn__dots i{width:8px;height:8px;border-radius:50%;display:block}
+
+.modal{
+  position:fixed;inset:0;z-index:120;
+  display:grid;place-items:center;padding:1.2rem;
+  background:rgba(6,9,20,.72);
+  overflow-y:auto;
+}
+.modal[hidden]{display:none}
+.modal__box{
+  width:min(560px,100%);
+  background:var(--indigo-800);
+  border:1px solid var(--indigo-line);
+  border-radius:var(--r-lg);
+  padding:clamp(1.2rem,3vw,1.8rem);
+  box-shadow:0 30px 70px var(--shadow);
+  max-height:calc(100dvh - 2.4rem);
+  overflow-y:auto;
+}
+.modal__head{display:flex;align-items:flex-start;gap:1rem;margin-bottom:1.2rem}
+.modal__k{
+  font-size:.68rem;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--marigold);font-weight:700;
+}
+.modal__t{font-size:1.5rem;letter-spacing:-.02em;margin:.3rem 0 .4rem}
+.modal__s{font-size:.9rem;color:var(--muted-soft);max-width:44ch}
+.modal__x{
+  margin-left:auto;background:var(--indigo-700);border:1px solid var(--indigo-line);
+  color:var(--chalk);width:34px;height:34px;border-radius:50%;
+  font-size:1.2rem;line-height:1;cursor:pointer;flex:0 0 auto;
+}
+.modal__x:hover{border-color:var(--marigold)}
+
+.themelist{display:flex;flex-direction:column;gap:.6rem}
+.themecard{
+  display:flex;align-items:center;gap:.9rem;width:100%;text-align:left;
+  padding:.85rem 1rem;cursor:pointer;
+  background:var(--indigo-700);
+  border:1.5px solid var(--indigo-line);
+  border-radius:var(--r-md);color:var(--chalk);
+}
+.themecard:hover{border-color:var(--marigold)}
+.themecard.is-active{border-color:var(--marigold);box-shadow:0 0 0 1px var(--marigold) inset}
+.themecard__swatch{display:flex;gap:5px;flex:0 0 auto}
+.themecard__swatch i{
+  width:17px;height:17px;border-radius:50%;display:block;
+  border:1px solid rgba(255,255,255,.18);
+}
+.themecard__main{flex:1 1 auto;min-width:0}
+.themecard__t{display:block;font-weight:700;font-size:.98rem}
+.themecard__s{display:block;font-size:.82rem;color:var(--muted-soft);margin-top:.1rem}
+.themecard__tick{color:var(--marigold);font-size:1.15rem;flex:0 0 auto;opacity:0}
+.themecard.is-active .themecard__tick{opacity:1}
+
+/* ==========================================================================
+   FACULTY DASHBOARD — charts and tables
+   ========================================================================== */
+.fchart{
+  background:var(--indigo-800);border:1px solid var(--indigo-line);
+  border-radius:var(--r-md);padding:1.1rem 1.2rem;margin-bottom:1rem;
+}
+.fchart__t{font-size:1rem;margin-bottom:.2rem}
+.fchart__s{font-size:.82rem;color:var(--muted);margin-bottom:1rem}
+.fchart svg{display:block;width:100%;height:auto;overflow:visible}
+.fchart .axis{stroke:var(--indigo-600);stroke-width:1}
+.fchart .glabel{font-family:var(--display);font-size:11px;fill:var(--muted)}
+.fchart .gvalue{font-family:var(--mono);font-size:11px;fill:var(--chalk)}
+.fchart .bar{fill:var(--marigold)}
+.fchart .bar--alt{fill:var(--peacock)}
+.fchart .bar--warn{fill:var(--madder)}
+.fchart .grid{stroke:var(--indigo-line);stroke-width:1}
+
+.fcharts{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1rem}
+
+.donut__hole{font-family:var(--display);font-weight:800;fill:var(--chalk)}
+.donut__sub{font-family:var(--display);font-size:11px;fill:var(--muted)}
+.legend{display:flex;flex-wrap:wrap;gap:.5rem .9rem;margin-top:.8rem}
+.legend span{display:inline-flex;align-items:center;gap:.4rem;font-size:.8rem;color:var(--muted-soft)}
+.legend i{width:10px;height:10px;border-radius:3px;display:block}
+
+.pager{
+  display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;
+  margin-top:1rem;padding-top:1rem;border-top:1px solid var(--indigo-line);
+}
+.pager__info{font-size:.84rem;color:var(--muted);margin-right:auto;font-family:var(--mono)}
+.pager button{
+  background:var(--indigo-700);border:1px solid var(--indigo-line);
+  color:var(--chalk);border-radius:var(--r-sm);
+  padding:.4rem .8rem;font-size:.85rem;font-weight:700;cursor:pointer;
+}
+.pager button:hover:not([disabled]){border-color:var(--marigold)}
+.pager button[disabled]{opacity:.4;cursor:not-allowed}
+.pager button.is-current{background:var(--marigold);color:#221503;border-color:var(--marigold)}
+
+.attention{display:flex;flex-direction:column;gap:.55rem}
+.attn{
+  display:flex;align-items:center;gap:.85rem;
+  padding:.75rem .95rem;border-radius:var(--r-sm);
+  background:rgba(207,74,60,.12);border-left:3px solid var(--madder);
+}
+.attn__main{flex:1 1 auto;min-width:0}
+.attn__n{font-weight:700;font-size:.92rem}
+.attn__r{font-size:.8rem;color:var(--muted-soft);margin-top:.15rem}
+.attn button{
+  background:var(--indigo-700);border:1px solid var(--indigo-line);color:var(--chalk);
+  border-radius:var(--r-sm);padding:.35rem .7rem;font-size:.8rem;cursor:pointer;flex:0 0 auto;
+}
+
+.skel{
+  background:linear-gradient(90deg,var(--indigo-700) 25%,var(--indigo-600) 50%,var(--indigo-700) 75%);
+  background-size:200% 100%;
+  animation:shimmer 1.3s linear infinite;
+  border-radius:var(--r-sm);height:1rem;
+}
+@keyframes shimmer{to{background-position:-200% 0}}
+.skel--card{height:76px;margin-bottom:.6rem}
+
+@media (prefers-reduced-motion:reduce){
+  .skel{animation:none}
+  html.theme-anim,html.theme-anim *{transition:none!important}
 }
